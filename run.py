@@ -417,7 +417,7 @@ def test(
                         action = create_stop_action(f"ERROR: {str(e)}")
                 
                 # BEGIN SEARCH
-                if args.agent_type == "search" and type(action) == list:
+                if args.agent_type in ["search", "c-search"] and type(action) == list:
                     evaluator = evaluator_router(
                         config_file, captioning_fn=eval_caption_image_fn
                     )
@@ -484,13 +484,30 @@ def test(
                             if not temp_early_stop_flag:
                                 try:
                                     # Generate possible action candidates for next step.
-                                    next_actions = agent.next_action(
-                                        temp_trajectory,
-                                        intent,
-                                        images=images,
-                                        meta_data=meta_data,
-                                        branching_factor=branching_factor
-                                    )
+                                    if args.agent_type == "c-search":
+                                        dynamic_bf = agent.estimate_action_sample_count(
+                                            temp_trajectory,
+                                            intent,
+                                            meta_data=meta_data,
+                                            images=images,
+                                            branching_factor=branching_factor
+                                        )
+                                        logger.info(f"[C-Search] Dynamic branching_factor={dynamic_bf} based on self-certainty")
+                                        next_actions = agent.next_action(
+                                            temp_trajectory,
+                                            intent,
+                                            images=images,
+                                            meta_data=meta_data,
+                                            branching_factor=dynamic_bf
+                                        )
+                                    else:
+                                        next_actions = agent.next_action(
+                                            temp_trajectory,
+                                            intent,
+                                            images=images,
+                                            meta_data=meta_data,
+                                            branching_factor=branching_factor
+                                        )
                                 except ValueError as e:
                                     # get the error message
                                     print('Failed to generate next actions:', e)

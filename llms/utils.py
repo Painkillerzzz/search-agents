@@ -1,5 +1,6 @@
 import argparse
 from typing import Any
+import math
 
 try:
     from vertexai.preview.generative_models import Image
@@ -80,3 +81,46 @@ def call_llm(
         )
 
     return response
+
+def call_llm_with_self_certainty(
+    lm_config: lm_config.LMConfig,
+    prompt: str,
+    num_outputs: int = 5,
+    use_cross_entropy: bool = True,
+) -> list[tuple[str, float]]:
+    assert lm_config.provider == "openai"
+    assert lm_config.mode == "completion", "Self-certainty computation is currently implemented only for completion mode"
+
+    import openai
+
+    openai.api_key = lm_config.gen_config["api_key"]
+    results = []
+
+    for _ in range(num_outputs):
+        response = openai.Completion.create(
+            engine=lm_config.model,
+            prompt=prompt,
+            temperature=lm_config.gen_config["temperature"],
+            max_tokens=lm_config.gen_config["max_tokens"],
+            top_p=lm_config.gen_config["top_p"],
+            logprobs=lm_config.gen_config.get("logprobs", 20),
+            echo=False,
+        )
+
+        text = response["choices"][0]["text"]
+        tokens = response["choices"][0]["logprobs"]["tokens"]
+        token_logprobs = response["choices"][0]["logprobs"]["token_logprobs"]
+        V = len(token_logprobs)
+        n = 1
+
+        # cross-entropy self-certainty
+        if use_cross_entropy:
+            ce_score = - (1 / (n * V)) * sum([lp for lp in token_logprobs if lp is not None])
+            results.append((text.strip(), ce_score))
+        else:
+            sc_score = - (1 / (n * V)) * sum([
+                math.log(V * math.exp(lp)) for lp in token_logprobs if lp is not None
+            ])
+            results.append((text.strip(), sc_score))
+
+    return results
